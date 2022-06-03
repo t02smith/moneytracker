@@ -41,6 +41,9 @@ total amount spent and budget remaining
 including descriptions, budget & time frame
 - **expenses** - Gives a rundown of the last N expenses. Can be filtered
 by category
+- **clear** - Clear all expenses and budget config
+- **account** - Create a new account
+- **accounts** - Outputs an overview of accounts
 
 ## Database Tables
 
@@ -50,12 +53,14 @@ Stores all expenses made.
 
 ```sqlite
 CREATE TABLE expenses (
-        id INTEGER PRIMARY KEY NOT NULL,
-        reason TEXT,
-        category TEXT,
-        datetime TEXT NOT NULL,
-        amount REAL NOT NULL
-    );
+                id INTEGER PRIMARY KEY NOT NULL,
+                reason TEXT,
+                category TEXT,
+                datetime TEXT NOT NULL,
+                amount REAL NOT NULL,
+                account_id INTEGER NOT NULL,
+                FOREIGN KEY(account_id) REFERENCES accounts(id)
+            );
 ```
 
 
@@ -71,9 +76,22 @@ CREATE TABLE budgets (
     );
 ```
 
+### accounts
+
+Stores account information.
+
+```sqlite
+CREATE TABLE accounts (
+                id INTEGER PRIMARY KEY NOT NULL,
+                account_name TEXT NOT NULL UNIQUE,
+                balance REAL NOT NULL
+            );
+```
+
 ## Todo
 
-- Support for many accounts
+- <span style="color:green">~~Support for many accounts~~</span>
 - Recurring payments
 - Extra/custom categories
 - Time frame with specific dates
+- Account total in/out in accounts command

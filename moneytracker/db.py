@@ -8,45 +8,70 @@ c = conn.cursor()
 
 # CREATE TABLE
 
-# expenses table with expenses
-c.execute("""
-    CREATE TABLE IF NOT EXISTS expenses (
-        id INTEGER PRIMARY KEY NOT NULL,
-        reason TEXT,
-        category TEXT,
-        datetime TEXT NOT NULL,
-        amount REAL NOT NULL
-    )
-""")
-
-
-# Given budgets for a given time period
-c.execute("""
-    CREATE TABLE IF NOT EXISTS budgets (
-        category TEXT PRIMARY KEY NOT NULL,
-        budget REAL NOT NULL,
-        time_frame TEXT NOT NULL
-    )
-""")
-
-
-# Set all default budgets to £0
-with conn:
-    for cat in list(ExpenseCategory):
+def create_expenses():
+    # expenses table with expenses
+    with conn:
         c.execute("""
-            INSERT OR IGNORE INTO budgets (category, budget, time_frame)
-            VALUES (:cat, :default_budget, :tf)
-        """, {"cat": cat.name, "default_budget": 0, "tf": TimeFrame.MONTH.name})
+            CREATE TABLE IF NOT EXISTS expenses (
+                id INTEGER PRIMARY KEY NOT NULL,
+                reason TEXT,
+                category TEXT,
+                datetime TEXT NOT NULL,
+                amount REAL NOT NULL,
+                account_id INTEGER NOT NULL,
+                FOREIGN KEY(account_id) REFERENCES accounts(id)
+            )
+        """)
+
+
+def create_budgets():
+    # Given budgets for a given time period
+    with conn:
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS budgets (
+                category TEXT PRIMARY KEY NOT NULL,
+                budget REAL NOT NULL,
+                time_frame TEXT NOT NULL
+            )
+        """)
+
+
+def load_default_budget_data():
+    # Set all default budgets to £0
+    with conn:
+        for cat in list(ExpenseCategory):
+            c.execute("""
+                INSERT OR IGNORE INTO budgets (category, budget, time_frame)
+                VALUES (:cat, :default_budget, :tf)
+            """, {"cat": cat.name, "default_budget": 0, "tf": TimeFrame.MONTH.name})
+
+
+def create_accounts():
+    with conn:
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS accounts (
+                id INTEGER PRIMARY KEY NOT NULL,
+                account_name TEXT NOT NULL UNIQUE,
+                balance REAL NOT NULL
+            )
+        """)
+
+
+create_accounts()
+create_expenses()
+create_budgets()
+load_default_budget_data()
 
 
 # DATABASE INTERACTIONS
 
+
 def insert_expense(expense: Expense):
     expense_id = hash(expense)
     with conn:
-        c.execute("INSERT INTO expenses VALUES (:id, :reason, :cat, :date, :amount)",
+        c.execute("INSERT INTO expenses VALUES (:id, :reason, :cat, :date, :amount, :acc)",
                   {"id": expense_id, "reason": expense.reason, "cat": expense.category.name,
-                   "amount": expense.amount, "date": expense.date.isoformat()})
+                   "amount": expense.amount, "date": expense.date.isoformat(), "acc": expense.account})
 
 
 def get_by_category(ecat: ExpenseCategory, tf: TimeFrame = None):
@@ -135,3 +160,79 @@ def get_timeframe(ecat: ExpenseCategory):
         return TimeFrame.MONTH
 
     return TimeFrame[res[0]]
+
+
+# CLEAR
+
+
+def clear_all():
+    """
+    Clears all data within all tables
+    :return: void
+    """
+    with conn:
+        c.execute("DROP TABLE IF EXISTS expenses")
+        c.execute("DROP TABLE IF EXISTS budgets")
+
+
+def clear_by_category(ecat: ExpenseCategory):
+    """
+    Clears all data with a given category
+    :param ecat: the category to remove
+    :return: void
+    """
+    with conn:
+        c.execute("""
+            DELETE FROM expenses
+            WHERE category = :ecat
+        """, {"ecat": ecat.name})
+        c.execute("""
+            DELETE FROM budgets
+            WHERE category = :ecat
+        """, {"ecat": ecat.name})
+
+
+# ACCOUNTS
+
+
+def get_accounts():
+    with conn:
+        c.execute("SELECT * FROM accounts")
+
+    return c.fetchall()
+
+
+def get_account_by_id(acc_id: int):
+    with conn:
+        c.execute("SELECT * FROM accounts WHERE id=:acc_id", {"acc_id": acc_id})
+    return c.fetchone()
+
+
+def get_account_id_by_name(name: str):
+    with conn:
+        c.execute("""
+            SELECT id
+            FROM accounts
+            WHERE account_name=:name
+        """, {"name": name})
+    return c.fetchone()
+
+
+def add_account(name: str, balance: float):
+    account_id = hash((name, balance, datetime.datetime.now()))
+    with conn:
+        c.execute("""
+            INSERT OR IGNORE INTO accounts (id, account_name, balance)
+            VALUES (:id, :name, :balance)
+        """, {"id": account_id, "name": name, "balance": balance})
+
+
+def change_balance(account_id: int, add_to: float):
+    acc = get_account_by_id(account_id)
+    new_balance = acc[2] + add_to
+    with conn:
+        c.execute("""
+            UPDATE accounts
+            SET balance = :balance
+            WHERE id = :acc_id
+        """, {"balance": new_balance, "acc_id": account_id})
