@@ -15,12 +15,12 @@ app = typer.Typer()
 
 
 @app.command(short_help="Document an expense")
-def spend(amount: float, category: str, reason: str):
+def spend(amount: float, category: Optional[str] = typer.Option("GENERAL"), reason: Optional[str] = typer.Option("")):
     insert_expense(Expense(amount, ExpenseCategory[category], reason, datetime.datetime.now()))
 
 
 @app.command(short_help="Document a deposit")
-def deposit(amount: float, category: str, reason: str):
+def deposit(amount: float, category: Optional[str] = typer.Option("GENERAL"), reason: Optional[str] = typer.Option("")):
     insert_expense(Expense(-1 * amount, ExpenseCategory[category], reason))
 
 
@@ -30,10 +30,10 @@ def overview():
     Gives an overview of categories and their expenses
     :return: void
     """
-    res = get_by_categories()
-    table = Table(show_header=True, header_style="bold magenta", title="Overview")
+    table = Table(show_header=True, header_style="bold magenta", show_edge=False,
+                  title="Overview", title_style="bold green")
     table.add_column("Category", width=8)
-    table.add_column("Net", width=6)
+    table.add_column("Net", width=10)
     table.add_column("Budget", width=25)
     table.add_column("Remaining", width=10)
 
@@ -51,32 +51,41 @@ def overview():
         else:
             return "green"
 
-    for row in res:
-        expense_cat = ExpenseCategory[row[0]]
-        colour = get_colour_from_category(expense_cat)
+    for ecat in list(ExpenseCategory):
+        tf = get_timeframe(ecat)
+        res = get_by_category(ecat, tf)
+
+        if res is None:
+            continue
+
+        print(res)
+
+        colour = get_colour_from_category(ecat)
         progress = ProgressBar(
-            total=row[2],
-            completed=row[1] if row[1] < row[2] else row[2],
+            total=res[2] if res[2] > 0 else 1,
+            completed=0 if res[1] >= res[2] else res[2] - res[1],
             width=25
         )
-        table.add_row(f"[{colour}]{expense_cat.name}[/{colour}]", "[bold]£{amount:.2f}[/bold]"
-                      .format(amount=row[1]), progress,
+        table.add_row(f"[{colour}]{ecat.name}[/{colour}]", "[bold]£{amount:.2f}[/bold]"
+                      .format(amount=res[1]), progress,
                       "[bold {colour}]£{amount:.2f}[/bold {colour}]"
-                      .format(amount=row[2]-row[1], colour=remaining_amount_colour(row[2], row[1])))
+                      .format(amount=res[2] - res[1], colour=remaining_amount_colour(res[2], res[1])))
 
     console.print(table)
 
 
 @app.command(short_help="Set a budget")
-def budget(category: str, amount: float):
+def budget(category: str, amount: float, timeframe: Optional[str] = typer.Option("MONTH")):
     """
     Set the budget of a given category\n
+    :param timeframe: Time period for which a budget lasts
     :param category: the category to update
     :param amount: the new budget
     :return: void
     """
     ecat = ExpenseCategory[category]
-    old = set_budget(ecat, amount)
+    tf = TimeFrame[timeframe]
+    old = set_budget(ecat, amount, tf)
     if old is None:
         console.print("[bold green]Set {category} budget to {amount:.2f}[/bold green]"
                       .format(category=category, amount=amount))
@@ -101,14 +110,15 @@ def categories():
     table = Table(show_header=True, header_style="bold blue", show_edge=False,
                   title="Your Budget", title_style="bold green1")
     table.add_column("Category", width=10)
-    table.add_column("Description", width=30)
+    table.add_column("Description", width=40)
     table.add_column("Budget", width=10, justify="right")
+    table.add_column("Time Frame", width=10, justify="right")
 
     for row in budgets:
         ecat = ExpenseCategory[row[0]]
         ecat_colour = get_colour_from_category(ecat)
         table.add_row(f"[bold {ecat_colour}]{row[0]}[/bold {ecat_colour}]", f"[italic]{ecat.description()}[/italic]",
-                      "[bold]£{amount:.2f}[/bold]".format(amount=row[1]))
+                      "[bold]£{amount:.2f}[/bold]".format(amount=row[1]), row[2])
 
     console.print(table)
 
@@ -123,7 +133,8 @@ def expenses(
     :param n: (optional) only show last n expenses [default = 10]
     :return: void
     """
-    res = get_expenses(n) if category is None else get_expenses_by_category(n, ExpenseCategory[category])
+    res = get_expenses(n, datetime.datetime(2020,10,5)) if category is None \
+        else get_expenses_by_category(n, ExpenseCategory[category])
     table = Table(show_header=True, header_style="bold blue", show_edge=False,
                   title="Your Expenses", title_style="bold green1")
     table.add_column("Category", width=10)
@@ -134,11 +145,16 @@ def expenses(
 
     for row in res:
         ecat = ExpenseCategory[row[2]]
-        ecat_colour = get_colour_from_category(ecat)
+        tf = get_timeframe(ecat)
         dt = isoparse(row[3])
+
+        if not is_within_time_frame(tf, dt):
+            continue
+
+        ecat_colour = get_colour_from_category(ecat)
         table.add_row(f"[bold {ecat_colour}]{row[2]}[/bold {ecat_colour}]", f"[bold]{row[4]}[/bold]",
                       f"{dt.day}/{dt.month}/{dt.year}",
-                      "{hour}:{mins}".format(hour=str(dt.hour).rjust(2, '0'), mins=str(dt.minute).rjust(2,'0')),
+                      "{hour}:{mins}".format(hour=str(dt.hour).rjust(2, '0'), mins=str(dt.minute).rjust(2, '0')),
                       f"[dim italic]{row[1]}[/dim italic]")
 
     console.print(table)

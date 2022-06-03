@@ -1,5 +1,5 @@
 import sqlite3
-from moneytracker.model import Expense, ExpenseCategory
+from moneytracker.model import *
 import datetime
 
 conn = sqlite3.connect("./finances.db")
@@ -24,7 +24,8 @@ c.execute("""
 c.execute("""
     CREATE TABLE IF NOT EXISTS budgets (
         category TEXT PRIMARY KEY NOT NULL,
-        budget REAL NOT NULL
+        budget REAL NOT NULL,
+        time_frame TEXT NOT NULL
     )
 """)
 
@@ -33,9 +34,9 @@ c.execute("""
 with conn:
     for cat in list(ExpenseCategory):
         c.execute("""
-            INSERT OR IGNORE INTO budgets (category, budget)
-            VALUES (:cat, :default_budget)
-        """, {"cat": cat.name, "default_budget": 0})
+            INSERT OR IGNORE INTO budgets (category, budget, time_frame)
+            VALUES (:cat, :default_budget, :tf)
+        """, {"cat": cat.name, "default_budget": 0, "tf": TimeFrame.MONTH.name})
 
 
 # DATABASE INTERACTIONS
@@ -48,20 +49,26 @@ def insert_expense(expense: Expense):
                    "amount": expense.amount, "date": expense.date.isoformat()})
 
 
-def get_by_categories():
+def get_by_category(ecat: ExpenseCategory, tf: TimeFrame = None):
+    if tf is None:
+        tf = TimeFrame.FOREVER
+
+    oldest_t = oldest_time(tf)
+
     with conn:
         c.execute("""
             SELECT budgets.category, SUM(expenses.amount) AS amount, budget 
             FROM budgets 
             INNER JOIN expenses 
             ON expenses.category = budgets.category
+            WHERE expenses.datetime > :oldest AND expenses.category=:ecat
             GROUP BY budgets.category
-        """)
+        """, {"oldest": oldest_t.isoformat(), "ecat": ecat.name})
 
-    return c.fetchall()
+    return c.fetchone()
 
 
-def set_budget(ecat: ExpenseCategory, amount: float):
+def set_budget(ecat: ExpenseCategory, amount: float, tf: TimeFrame):
     old = get_budget_by_category(ecat)
     if old is not None:
         if old[0] == amount:
@@ -69,11 +76,11 @@ def set_budget(ecat: ExpenseCategory, amount: float):
 
     with conn:
         c.execute("""
-            INSERT INTO budgets (category, budget)
-            VALUES (:cat, :amount)
+            INSERT INTO budgets (category, budget, time_frame)
+            VALUES (:cat, :amount, :tf)
             ON CONFLICT (category)
             DO UPDATE SET budget=:amount
-        """, {"cat": ecat.name, "amount": amount})
+        """, {"cat": ecat.name, "amount": amount, "tf": tf.name})
 
     return None if old is None else old[1]
 
@@ -90,14 +97,15 @@ def get_budget_by_category(ecat: ExpenseCategory):
     return c.fetchone()
 
 
-def get_expenses(n: int):
+def get_expenses(n: int, oldest_date: datetime):
     with conn:
         c.execute("""
             SELECT *
             FROM expenses
+            WHERE datetime > :dt
             ORDER BY datetime DESC
             LIMIT :n
-        """, {"n": n})
+        """, {"n": n, "dt": oldest_date.isoformat()})
 
     return c.fetchall()
 
@@ -112,3 +120,18 @@ def get_expenses_by_category(n: int, ecat: ExpenseCategory):
         """, {"n": n, "ecat": ecat.name})
 
     return c.fetchall()
+
+
+def get_timeframe(ecat: ExpenseCategory):
+    with conn:
+        c.execute("""
+            SELECT time_frame
+            FROM budgets
+            WHERE category=:ecat
+        """, {"ecat": ecat.name})
+
+    res = c.fetchone()
+    if res is None:
+        return TimeFrame.MONTH
+
+    return TimeFrame[res[0]]
