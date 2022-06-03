@@ -16,11 +16,25 @@ app = typer.Typer()
 
 @app.command(short_help="Document an expense")
 def spend(amount: float, category: Optional[str] = typer.Option("GENERAL"), reason: Optional[str] = typer.Option("")):
+    """
+    Submit a record about money spent in a given payment\n
+    :param amount: How much was spent
+    :param category: The category the payment fell into
+    :param reason: The reason for the payment
+    :return: void
+    """
     insert_expense(Expense(amount, ExpenseCategory[category], reason, datetime.datetime.now()))
 
 
 @app.command(short_help="Document a deposit")
 def deposit(amount: float, category: Optional[str] = typer.Option("GENERAL"), reason: Optional[str] = typer.Option("")):
+    """
+    Submit a record about some money entering your account(s)
+    :param amount: How much was added
+    :param category: The category the deposit falls into
+    :param reason: The reason for the deposit
+    :return: void
+    """
     insert_expense(Expense(-1 * amount, ExpenseCategory[category], reason))
 
 

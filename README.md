@@ -3,6 +3,9 @@
 Moneytracker is a command line tool to help you track your finances,
 written in Python using SQLite3, Typer & Rich.
 
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
+![SQLite](https://img.shields.io/badge/sqlite-%2307405e.svg?style=for-the-badge&logo=sqlite&logoColor=white)
+
 ## Categories
 
 Expenses should be split into categories to give contextual information
@@ -24,11 +27,20 @@ Commands can currently be called using:
 python main.py [COMMAND_NAME] [ARG1] [ARGS2] ....
 ```
 
-- **overview** - *Gives a rundown of your expenses by category including 
-total amount spent and budget remaining*
-- **spend [amount] [category] [reason]** - Add an expense
-- **deposit [amount] [category] [reason]** - Add some income
-- **budget [category] [amount]** - Set the budget for a category
+You can find more information about commands, such as arguments, by running:
+```bash
+python main.py [COMMAND_NAME] --help
+```
+
+- **overview** - Gives a rundown of your expenses by category including 
+total amount spent and budget remaining
+- **spend** - Add an expense
+- **deposit** - Add some income
+- **budget** - Set the budget for a category
+- **categories** - Gives a rundown about all the expense categories 
+including descriptions, budget & time frame
+- **expenses** - Gives a rundown of the last N expenses. Can be filtered
+by category
 
 ## Database Tables
 
@@ -58,3 +70,10 @@ CREATE TABLE budgets (
         time_frame TEXT NOT NULL
     );
 ```
+
+## Todo
+
+- Support for many accounts
+- Recurring payments
+- Extra/custom categories
+- Time frame with specific dates
