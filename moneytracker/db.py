@@ -82,7 +82,30 @@ def get_budget():
     return c.fetchall()
 
 
-def get_budget_by_category(cat: ExpenseCategory):
+def get_budget_by_category(ecat: ExpenseCategory):
     with conn:
-        c.execute("SELECT * FROM budgets WHERE category=:cat", {"cat": cat.name})
+        c.execute("SELECT * FROM budgets WHERE category=:cat", {"cat": ecat.name})
     return c.fetchone()
+
+
+def get_expenses(n: int):
+    with conn:
+        c.execute("""
+            SELECT *
+            FROM finances
+            LIMIT :n
+        """, {"n": n})
+
+    return c.fetchall()
+
+
+def get_expenses_by_category(n: int, ecat: ExpenseCategory):
+    with conn:
+        c.execute("""
+            SELECT *
+            FROM finances
+            WHERE category=:ecat
+            LIMIT :n
+        """, {"n": n, "ecat": ecat.name})
+
+    return c.fetchall()

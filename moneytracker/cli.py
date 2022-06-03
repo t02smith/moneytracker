@@ -1,4 +1,5 @@
 import typer
+from typing import Optional
 
 from rich.console import Console
 from rich.table import Table
@@ -23,6 +24,10 @@ def deposit(amount: float, category: str, reason: str):
 
 @app.command(short_help="Gives an overview by category")
 def overview():
+    """
+    Gives an overview of categories and their expenses
+    :return: void
+    """
     res = get_by_categories()
 
     console.print("[bold magenta]Overview[/bold magenta]!")
@@ -61,8 +66,14 @@ def overview():
 
 @app.command(short_help="Set a budget")
 def budget(category: str, amount: float):
-    cat = ExpenseCategory[category]
-    old = set_budget(cat, amount)
+    """
+    Set the budget of a given category\n
+    :param category: the category to update
+    :param amount: the new budget
+    :return: void
+    """
+    ecat = ExpenseCategory[category]
+    old = set_budget(ecat, amount)
     if old is None:
         console.print("[bold green]Set {category} budget to {amount:.2f}[/bold green]"
                       .format(category=category, amount=amount))
@@ -70,8 +81,57 @@ def budget(category: str, amount: float):
         if old == amount:
             console.print("Category [bold {colour}]{category}[/bold {colour}] is already [bold red1]"
                           "{amount:.2f}[/bold red1]"
-                          .format(category=category, colour=get_colour_from_category(cat), amount=amount))
+                          .format(category=category, colour=get_colour_from_category(ecat), amount=amount))
         else:
             console.print("Updating [bold {colour}]{category}[/bold {colour}] budget from [bold orange]"
                           "{old:.2f}[/bold orange] to [bold green]{new:.2f}[/bold green]"
-                          .format(category=category, old=old, new=amount, colour=get_colour_from_category(cat)))
+                          .format(category=category, old=old, new=amount, colour=get_colour_from_category(ecat)))
+
+
+@app.command(short_help="Show a list of categories and their budget")
+def categories():
+    """
+    Gives a rundown of all categories, their budget and purpose
+    :return: void
+    """
+    budgets = get_budget()
+    table = Table(show_header=True, header_style="bold blue", show_edge=False,
+                  title="Your Budget", title_style="bold green1")
+    table.add_column("Category", width=10)
+    table.add_column("Description", width=30)
+    table.add_column("Budget", width=10, justify="right")
+
+    for row in budgets:
+        ecat = ExpenseCategory[row[0]]
+        ecat_colour = get_colour_from_category(ecat)
+        table.add_row(f"[bold {ecat_colour}]{row[0]}[/bold {ecat_colour}]", f"[italic]{ecat.description()}[/italic]",
+                      "[bold]£{amount:.2f}[/bold]".format(amount=row[1]))
+
+    console.print(table)
+
+
+@app.command(short_help="List of expenses")
+def expenses(
+        category: Optional[str] = typer.Option(None, help="Filter by category"),
+        n: Optional[int] = typer.Option(10, help="The number of results wanted")):
+    """
+    Generates a table of expenses\n
+    :param category: (optional) filter by category
+    :param n: (optional) only show last n expenses [default = 10]
+    :return: void
+    """
+    res = get_expenses(n) if category is None else get_expenses_by_category(n, ExpenseCategory[category])
+
+    table = Table(show_header=True, header_style="bold blue", show_edge=False,
+                  title="Your Expenses", title_style="bold green1")
+    table.add_column("Category", width=10)
+    table.add_column("Amount", width=10, justify="right")
+    table.add_column("Reason", width=30)
+
+    for row in res:
+        ecat = ExpenseCategory[row[2]]
+        ecat_colour = get_colour_from_category(ecat)
+        table.add_row(f"[bold {ecat_colour}]{row[2]}[/bold {ecat_colour}]", f"[bold]{row[3]}[/bold]",
+                      f"[dim italic]{row[1]}[/dim italic]")
+
+    console.print(table)

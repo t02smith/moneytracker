@@ -22,7 +22,7 @@ class ExpenseCategory(Enum):
 
 
 def get_colour_from_category(cat: ExpenseCategory):
-    colours = ["cyan", "green", "red1", "orange_red1", "pink", "purple"]
+    colours = ["cyan", "green", "red1", "orange_red1", "hot_pink", "purple"]
     return colours[cat.value % len(colours)]
 
 
