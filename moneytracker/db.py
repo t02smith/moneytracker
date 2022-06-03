@@ -8,12 +8,13 @@ c = conn.cursor()
 
 # CREATE TABLE
 
-# finances table with expenses
+# expenses table with expenses
 c.execute("""
-    CREATE TABLE IF NOT EXISTS finances (
+    CREATE TABLE IF NOT EXISTS expenses (
         id INTEGER PRIMARY KEY NOT NULL,
         reason TEXT,
         category TEXT,
+        datetime TEXT NOT NULL,
         amount REAL NOT NULL
     )
 """)
@@ -42,25 +43,26 @@ with conn:
 def insert_expense(expense: Expense):
     expense_id = hash(expense)
     with conn:
-        c.execute("INSERT INTO finances VALUES (:id, :reason, :cat, :amount)",
-                  {"id": expense_id, "reason": expense.reason, "cat": expense.category.name, "amount": expense.amount})
+        c.execute("INSERT INTO expenses VALUES (:id, :reason, :cat, :date, :amount)",
+                  {"id": expense_id, "reason": expense.reason, "cat": expense.category.name,
+                   "amount": expense.amount, "date": expense.date.isoformat()})
 
 
 def get_by_categories():
     with conn:
         c.execute("""
-            SELECT budgets.category, SUM(finances.amount) AS amount, budget 
+            SELECT budgets.category, SUM(expenses.amount) AS amount, budget 
             FROM budgets 
-            INNER JOIN finances 
-            ON finances.category = budgets.category
+            INNER JOIN expenses 
+            ON expenses.category = budgets.category
             GROUP BY budgets.category
         """)
 
     return c.fetchall()
 
 
-def set_budget(cat: ExpenseCategory, amount: float):
-    old = get_budget_by_category(cat)
+def set_budget(ecat: ExpenseCategory, amount: float):
+    old = get_budget_by_category(ecat)
     if old is not None:
         if old[0] == amount:
             return old[1]
@@ -71,7 +73,7 @@ def set_budget(cat: ExpenseCategory, amount: float):
             VALUES (:cat, :amount)
             ON CONFLICT (category)
             DO UPDATE SET budget=:amount
-        """, {"cat": cat.name, "amount": amount})
+        """, {"cat": ecat.name, "amount": amount})
 
     return None if old is None else old[1]
 
@@ -92,7 +94,8 @@ def get_expenses(n: int):
     with conn:
         c.execute("""
             SELECT *
-            FROM finances
+            FROM expenses
+            ORDER BY datetime DESC
             LIMIT :n
         """, {"n": n})
 
@@ -103,7 +106,7 @@ def get_expenses_by_category(n: int, ecat: ExpenseCategory):
     with conn:
         c.execute("""
             SELECT *
-            FROM finances
+            FROM expenses
             WHERE category=:ecat
             LIMIT :n
         """, {"n": n, "ecat": ecat.name})

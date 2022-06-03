@@ -31,6 +31,7 @@ class Expense:
     amount: float
     category: ExpenseCategory
     reason: str
+    date: datetime
 
     def __hash__(self):
         return hash((self.amount, self.category, self.reason, datetime.now()))

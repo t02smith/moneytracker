@@ -8,13 +8,15 @@ from rich.progress_bar import ProgressBar
 from moneytracker.model import *
 from moneytracker.db import *
 
+from dateutil.parser import isoparse
+
 console = Console()
 app = typer.Typer()
 
 
 @app.command(short_help="Document an expense")
 def spend(amount: float, category: str, reason: str):
-    insert_expense(Expense(amount, ExpenseCategory[category], reason))
+    insert_expense(Expense(amount, ExpenseCategory[category], reason, datetime.datetime.now()))
 
 
 @app.command(short_help="Document a deposit")
@@ -29,15 +31,16 @@ def overview():
     :return: void
     """
     res = get_by_categories()
-
-    console.print("[bold magenta]Overview[/bold magenta]!")
-    table = Table(show_header=True, header_style="bold blue")
+    table = Table(show_header=True, header_style="bold magenta", title="Overview")
     table.add_column("Category", width=8)
     table.add_column("Net", width=6)
     table.add_column("Budget", width=25)
     table.add_column("Remaining", width=10)
 
     def remaining_amount_colour(total: int, leftover: int):
+        if total == 0:
+            return "red1"
+
         ratio = leftover/total
         if ratio >= 1:
             return "red1"
@@ -121,17 +124,21 @@ def expenses(
     :return: void
     """
     res = get_expenses(n) if category is None else get_expenses_by_category(n, ExpenseCategory[category])
-
     table = Table(show_header=True, header_style="bold blue", show_edge=False,
                   title="Your Expenses", title_style="bold green1")
     table.add_column("Category", width=10)
-    table.add_column("Amount", width=10, justify="right")
+    table.add_column("Amount", width=8, justify="right")
+    table.add_column("Date", width=10, justify="right")
+    table.add_column("Time", width=6, justify="right")
     table.add_column("Reason", width=30)
 
     for row in res:
         ecat = ExpenseCategory[row[2]]
         ecat_colour = get_colour_from_category(ecat)
-        table.add_row(f"[bold {ecat_colour}]{row[2]}[/bold {ecat_colour}]", f"[bold]{row[3]}[/bold]",
+        dt = isoparse(row[3])
+        table.add_row(f"[bold {ecat_colour}]{row[2]}[/bold {ecat_colour}]", f"[bold]{row[4]}[/bold]",
+                      f"{dt.day}/{dt.month}/{dt.year}",
+                      "{hour}:{mins}".format(hour=str(dt.hour).rjust(2, '0'), mins=str(dt.minute).rjust(2,'0')),
                       f"[dim italic]{row[1]}[/dim italic]")
 
     console.print(table)
