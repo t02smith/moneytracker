@@ -90,7 +90,8 @@ def get_by_category(ecat: ExpenseCategory, tf: TimeFrame = None):
             GROUP BY budgets.category
         """, {"oldest": oldest_t.isoformat(), "ecat": ecat.name})
 
-    return c.fetchone()
+    res = c.fetchone()
+    return None if res is None else ExpenseCategoryOverview(*res)
 
 
 def set_budget(ecat: ExpenseCategory, amount: float, tf: TimeFrame):
@@ -112,8 +113,13 @@ def set_budget(ecat: ExpenseCategory, amount: float, tf: TimeFrame):
 
 def get_budget():
     with conn:
-        c.execute("SELECT * FROM budgets")
-    return c.fetchall()
+        c.execute("""
+            SELECT * 
+            FROM budgets
+        """)
+
+    res = c.fetchall()
+    return [Budget(*x) for x in res]
 
 
 def get_budget_by_category(ecat: ExpenseCategory):
@@ -122,29 +128,37 @@ def get_budget_by_category(ecat: ExpenseCategory):
     return c.fetchone()
 
 
-def get_expenses(n: int, oldest_date: datetime):
+def get_expenses(n: int, start_date: datetime = None):
+    if start_date is None:
+        start_date = datetime.datetime(1, 1, 1)
+
     with conn:
         c.execute("""
-            SELECT *
+            SELECT amount, category, reason, datetime, account_id
             FROM expenses
             WHERE datetime > :dt
             ORDER BY datetime DESC
             LIMIT :n
-        """, {"n": n, "dt": oldest_date.isoformat()})
+        """, {"n": n, "dt": start_date.isoformat()})
 
-    return c.fetchall()
+    res = c.fetchall()
+    return [Expense(*x) for x in res]
 
 
-def get_expenses_by_category(n: int, ecat: ExpenseCategory):
+def get_expenses_by_category(n: int, ecat: ExpenseCategory, start_date: datetime = None):
+    if start_date is None:
+        start_date = datetime.datetime(1, 1, 1)
+
     with conn:
         c.execute("""
-            SELECT *
+            SELECT amount, category, reason, datetime, account_id
             FROM expenses
-            WHERE category=:ecat
+            WHERE category=:ecat AND datetime > :dt
             LIMIT :n
-        """, {"n": n, "ecat": ecat.name})
+        """, {"n": n, "ecat": ecat.name, "dt": start_date.isoformat()})
 
-    return c.fetchall()
+    res = c.fetchall()
+    return [Expense(*x) for x in res]
 
 
 def get_timeframe(ecat: ExpenseCategory):
@@ -172,7 +186,6 @@ def clear_all():
     """
     with conn:
         c.execute("DROP TABLE IF EXISTS expenses")
-        c.execute("DROP TABLE IF EXISTS budgets")
 
 
 def clear_by_category(ecat: ExpenseCategory):
@@ -199,23 +212,28 @@ def get_accounts():
     with conn:
         c.execute("SELECT * FROM accounts")
 
-    return c.fetchall()
+    res = c.fetchall()
+    return [Account(*x) for x in res]
 
 
 def get_account_by_id(acc_id: int):
     with conn:
         c.execute("SELECT * FROM accounts WHERE id=:acc_id", {"acc_id": acc_id})
-    return c.fetchone()
+
+    res = c.fetchone()
+    return None if res is None else Account(*res)
 
 
-def get_account_id_by_name(name: str):
+def get_account_by_name(name: str):
     with conn:
         c.execute("""
-            SELECT id
+            SELECT *
             FROM accounts
             WHERE account_name=:name
         """, {"name": name})
-    return c.fetchone()
+
+    res = c.fetchone()
+    return None if res is None else Account(*res)
 
 
 def add_account(name: str, balance: float):
@@ -229,7 +247,7 @@ def add_account(name: str, balance: float):
 
 def change_balance(account_id: int, add_to: float):
     acc = get_account_by_id(account_id)
-    new_balance = acc[2] + add_to
+    new_balance = acc.balance + add_to
     with conn:
         c.execute("""
             UPDATE accounts

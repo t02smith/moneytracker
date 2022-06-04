@@ -63,9 +63,23 @@ class Expense:
 
 @dataclass
 class Budget:
-    amount: float
     category: ExpenseCategory
+    amount: float
     time_frame: TimeFrame
+
+
+@dataclass
+class ExpenseCategoryOverview:
+    category: ExpenseCategory
+    amount_spent: float
+    budget: float
+
+
+@dataclass
+class Account:
+    id: int
+    account_name: str
+    balance: float
 
 
 def is_within_time_frame(tf: TimeFrame, dt: datetime):

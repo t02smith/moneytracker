@@ -24,7 +24,7 @@ about an expense without the need for a reason.
 Commands can currently be called using:
 
 ```bash
-python main.py [COMMAND_NAME] [ARG1] [ARGS2] ....
+python main.py [COMMAND_NAME] [ARG1] [ARG2] ....
 ```
 
 You can find more information about commands, such as arguments, by running:
