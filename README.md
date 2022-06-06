@@ -63,6 +63,19 @@ CREATE TABLE expenses (
             );
 ```
 
+### recurring_payments
+
+Tracks recurring payments made after every time period
+
+```sqlite
+CREATE TABLE recurring_payments (
+                id INTEGER PRIMARY KEY NOT NULL,
+                expense_id INTEGER NOT NULL,
+                time_frame TEXT NOT NULL,
+                last_paid TEXT NOT NULL,
+                FOREIGN KEY (expense_id) REFERENCES expenses(id)
+            );
+```
 
 ### budgets
 
@@ -91,6 +104,7 @@ CREATE TABLE accounts (
 ## Todo
 
 - <span style="color:green">~~Support for many accounts~~</span>
+- Default account
 - Recurring payments
 - Extra/custom categories
 - Time frame with specific dates

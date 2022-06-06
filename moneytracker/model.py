@@ -50,12 +50,20 @@ def get_colour_from_category(cat: ExpenseCategory):
 
 
 @dataclass
+class Account:
+    id: int
+    account_name: str
+    balance: float
+
+
+@dataclass
 class Expense:
-    amount: float
-    category: ExpenseCategory
+    id: int
     reason: str
+    category: ExpenseCategory
     date: datetime
-    account: int
+    amount: float
+    account: Account
 
     def __hash__(self):
         return hash((self.amount, self.category, self.reason, datetime.now()))
@@ -76,10 +84,11 @@ class ExpenseCategoryOverview:
 
 
 @dataclass
-class Account:
+class RecurringExpense:
     id: int
-    account_name: str
-    balance: float
+    expense: Expense
+    recur_every: TimeFrame
+    last_paid: datetime
 
 
 def is_within_time_frame(tf: TimeFrame, dt: datetime):

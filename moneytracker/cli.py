@@ -2,20 +2,22 @@ import typer
 from typing import Optional, List
 
 from rich.console import Console
+from rich.prompt import Confirm
 from rich.table import Table
 from rich.progress_bar import ProgressBar
 
-from moneytracker.db import *
+from moneytracker.db.db import *
 
 from dateutil.parser import isoparse
+from datetime import datetime
 
 console = Console()
 app = typer.Typer()
 
 
 @app.command(short_help="Document an expense")
-def spend(amount: float,
-          account_name: str,
+def spend(amount: float = typer.Option(..., "--amount", "-m", help="How much was spent"),
+          account_name: str = typer.Option(..., "--account", "-a", help="Which account it was taken from"),
           category: Optional[str] = typer.Option("GENERAL", "--category", "-c", help="Context information"),
           reason: Optional[str] = typer.Option("", "--reason", "-r", help="Why the expense was made")):
     """
@@ -26,15 +28,21 @@ def spend(amount: float,
     :param reason: The reason for the payment
     :return: void
     """
-    acc_id = get_account_by_name(account_name).id
+    acc = get_account_by_name(account_name)
     insert_expense(
-        Expense(amount, ExpenseCategory[category], reason, datetime.datetime.now(), acc_id))
-    change_balance(acc_id, -1*amount)
+        Expense(-1, reason, ExpenseCategory[category], datetime.now(), amount, acc))
+    new_balance = change_balance(acc, -1*amount)
+
+    console.print("Adding expense {amount:.2f} for {reason} to {name}"
+                  .format(amount=amount, reason=category, name=account_name))
+    console.print("Account [bold green]{name}[/bold green]'s balance changed [bold red]{old:.2f}[/bold red] -> "
+                  "[bold blue]{new:.2f}[/bold blue]"
+                  .format(name=acc.account_name, old=acc.balance, new=new_balance))
 
 
 @app.command(short_help="Document a deposit")
-def deposit(amount: float,
-            account_name: str,
+def deposit(amount: float = typer.Option(..., "--amount", "-m", help="How much was received"),
+            account_name: str = typer.Option(..., "--account", "-a", help="Which account it was added to"),
             category: Optional[str] = typer.Option("GENERAL", "--category", "-c", help="Context information"),
             reason: Optional[str] = typer.Option("", "--reason", "-r", help="Why the deposit was made")):
     """
@@ -45,10 +53,16 @@ def deposit(amount: float,
     :param reason: The reason for the deposit
     :return: void
     """
-    acc_id = get_account_by_name(account_name).id
+    acc = get_account_by_name(account_name)
     insert_expense(
-        Expense(-1*amount, ExpenseCategory[category], reason, datetime.datetime.now(), acc_id))
-    change_balance(acc_id, amount)
+        Expense(-1*amount, ExpenseCategory[category], reason, datetime.now(), acc))
+    new_balance = change_balance(acc, amount)
+
+    console.print("Adding deposit {amount:.2f} for {reason} to {name}"
+                  .format(amount=amount, reason=category, name=account_name))
+    console.print("Account [bold green]{name}[/bold green]'s balance changed [bold red]{old:.2f}[/bold red] -> "
+                  "[bold blue]{new:.2f}[/bold blue]"
+                  .format(name=acc.account_name, old=acc.balance, new=new_balance))
 
 
 @app.command(short_help="Gives an overview by category")
@@ -101,7 +115,8 @@ def overview():
 
 
 @app.command(short_help="Set a budget")
-def budget(category: str, amount: float,
+def budget(category: str = typer.Option(..., "--category", "-c", help="Which category you're updating"),
+           amount: float = typer.Option(..., "--amount", "-m", help="The new budget for this category"),
            timeframe: Optional[str] =
            typer.Option("MONTH", "--time-frame", "-t",
                         help="The length of time an expense is considered part of the budget")):
@@ -183,22 +198,17 @@ def expenses(
     table.add_column("Time", width=6, justify="right")
     table.add_column("Reason", width=30)
 
-    account_list = get_accounts()
-
     for row in res:
-        ecat = ExpenseCategory[row.category]
-        tf = get_timeframe(ecat)
-        dt = isoparse(row.date)
-        acc = [a for a in account_list if a.id == row.account][0]
+        tf = get_timeframe(row.category)
 
-        if not is_within_time_frame(tf, dt):
+        if not is_within_time_frame(tf, row.date):
             continue
 
-        ecat_colour = get_colour_from_category(ecat)
-        table.add_row(f"[bold {ecat_colour}]{ecat.name}[/bold {ecat_colour}]",
-                      "[bold]£{amount:.2f}[/bold]".format(amount=row.amount), acc.account_name,
-                      f"{dt.day}/{dt.month}/{dt.year}",
-                      "{hour}:{mins}".format(hour=str(dt.hour).rjust(2, '0'), mins=str(dt.minute).rjust(2, '0')),
+        ecat_colour = get_colour_from_category(row.category)
+        table.add_row(f"[bold {ecat_colour}]{row.category.name}[/bold {ecat_colour}]",
+                      "[bold]£{amount:.2f}[/bold]".format(amount=row.amount), row.account.account_name,
+                      f"{row.date.day}/{row.date.month}/{row.date.year}",
+                      "{hour}:{mins}".format(hour=str(row.date.hour).rjust(2, '0'), mins=str(row.date.minute).rjust(2, '0')),
                       f"[dim italic]{row.reason}[/dim italic]")
 
     console.print(table)
@@ -211,14 +221,24 @@ def clear(category: Optional[str] = typer.Option(None, "--category", "-c")):
     :param category: (optional) remove records of a certain category
     :return: void
     """
+    console.print("[bold red]Clearing will remove all of your expense data.[/bold red]")
+    ask = Confirm.ask("Are you sure you want to clear? ")
+
+    if ask == "N":
+        console.print("[italic]Clear cancelled[/italic]")
+        return
+
     if category is None:
+        console.print("[italic]Clearing all data[/italic]")
         clear_all()
     else:
+        console.print(f"[italic]Clearing {category} data[/italic]")
         clear_by_category(ExpenseCategory[category])
 
     create_expenses()
     create_budgets()
     load_default_budget_data()
+    console.print("[green]Data cleared[/green]")
 
 
 # ACCOUNTS
@@ -231,7 +251,13 @@ def account(name: str, balance: Optional[float] = typer.Option(0, "--balance", "
     :param balance: Initial account balance
     :return: void
     """
-    add_account(name, balance)
+    try:
+        add_account(name, balance)
+        console.print("[green]Account {name} created successfully with balance {amount:.2f}[/green]"
+                      .format(name=name, amount=balance))
+    except sqlite3.IntegrityError as e:
+        console.print(f"[red]Error creating account {name}[/red]")
+        console.print(f"[italic dim]{e}[/italic dim]")
 
 
 @app.command(short_help="List accounts")
@@ -249,5 +275,47 @@ def accounts():
     for acc in account_list:
         table.add_row(f"[bold]{acc.account_name}[/bold]",
                       "£{balance:.2f}".format(balance=acc.balance))
+
+    console.print(table)
+
+
+@app.command(short_help="Add a recurring payment")
+def recur(
+        amount: float,
+        account_name: str,
+        category: Optional[str] = typer.Option("GENERAL", "--category", "-c", help="Context information"),
+        reason: Optional[str] = typer.Option("", "--reason", "-r", help="Why the expense was made"),
+        time_frame: Optional[str] = typer.Option("MONTH", "--time-frame", "-t", help="Payment occurs ever...")
+):
+    acc = get_account_by_name(account_name)
+    expense = Expense(-1, reason, ExpenseCategory[category], datetime.now(), amount, acc)
+    expense.id = insert_expense(expense)
+    change_balance(acc, -1 * amount)
+    setup_recurring_payment(expense, TimeFrame[time_frame])
+    console.print("[bold green]Setup recurring payment to {acc} for {amount:.2f} every {tf}[/bold green]"
+                  .format(acc=acc.account_name, amount=amount, tf=time_frame))
+
+
+@app.command(short_help="Outputs recurring payments")
+def recurring():
+    recurring_ls = get_recurring_payments()
+    table = Table(show_header=True, header_style="bold blue", show_edge=False,
+                  title="Your Payments", title_style="bold green1")
+    table.add_column("Category", width=10)
+    table.add_column("Amount", width=8, justify="right")
+    table.add_column("Account", width=10)
+    table.add_column("Last Paid", width=15, justify="right")
+    table.add_column("Pay Every", width=10, justify="right")
+    table.add_column("Reason", width=30)
+
+    for re in recurring_ls:
+        ecat_colour = get_colour_from_category(re.expense.category)
+        table.add_row(
+            f"[bold {ecat_colour}]{re.expense.category.name}[/bold {ecat_colour}]",
+            "£{amount:.2f}".format(amount=re.expense.amount),
+            re.expense.account.account_name,
+            f"{re.last_paid.day}/{re.last_paid.month}/{re.last_paid.year} {re.last_paid.hour}:{re.last_paid.minute}",
+            re.recur_every.name, re.expense.reason
+        )
 
     console.print(table)

@@ -1,66 +1,14 @@
-import sqlite3
-from moneytracker.model import *
+from moneytracker.db.create import *
 import datetime
-
-conn = sqlite3.connect("./finances.db")
-c = conn.cursor()
-
+from dateutil.parser import isoparse
 
 # CREATE TABLE
-
-def create_expenses():
-    # expenses table with expenses
-    with conn:
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS expenses (
-                id INTEGER PRIMARY KEY NOT NULL,
-                reason TEXT,
-                category TEXT,
-                datetime TEXT NOT NULL,
-                amount REAL NOT NULL,
-                account_id INTEGER NOT NULL,
-                FOREIGN KEY(account_id) REFERENCES accounts(id)
-            )
-        """)
-
-
-def create_budgets():
-    # Given budgets for a given time period
-    with conn:
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS budgets (
-                category TEXT PRIMARY KEY NOT NULL,
-                budget REAL NOT NULL,
-                time_frame TEXT NOT NULL
-            )
-        """)
-
-
-def load_default_budget_data():
-    # Set all default budgets to £0
-    with conn:
-        for cat in list(ExpenseCategory):
-            c.execute("""
-                INSERT OR IGNORE INTO budgets (category, budget, time_frame)
-                VALUES (:cat, :default_budget, :tf)
-            """, {"cat": cat.name, "default_budget": 0, "tf": TimeFrame.MONTH.name})
-
-
-def create_accounts():
-    with conn:
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS accounts (
-                id INTEGER PRIMARY KEY NOT NULL,
-                account_name TEXT NOT NULL UNIQUE,
-                balance REAL NOT NULL
-            )
-        """)
-
 
 create_accounts()
 create_expenses()
 create_budgets()
 load_default_budget_data()
+create_recurring_payments()
 
 
 # DATABASE INTERACTIONS
@@ -71,7 +19,8 @@ def insert_expense(expense: Expense):
     with conn:
         c.execute("INSERT INTO expenses VALUES (:id, :reason, :cat, :date, :amount, :acc)",
                   {"id": expense_id, "reason": expense.reason, "cat": expense.category.name,
-                   "amount": expense.amount, "date": expense.date.isoformat(), "acc": expense.account})
+                   "amount": expense.amount, "date": expense.date.isoformat(), "acc": expense.account.id})
+    return expense_id
 
 
 def get_by_category(ecat: ExpenseCategory, tf: TimeFrame = None):
@@ -129,36 +78,68 @@ def get_budget_by_category(ecat: ExpenseCategory):
 
 
 def get_expenses(n: int, start_date: datetime = None):
+    """
+    Collects expenses by a specific category
+    :param n: max number of records to fetch
+    :param start_date: oldest date of a record
+    :return: list of expense objects
+    """
     if start_date is None:
         start_date = datetime.datetime(1, 1, 1)
 
     with conn:
         c.execute("""
-            SELECT amount, category, reason, datetime, account_id
+            SELECT expenses.*, accounts.*
             FROM expenses
+            INNER JOIN accounts ON expenses.account_id = accounts.id
             WHERE datetime > :dt
             ORDER BY datetime DESC
             LIMIT :n
         """, {"n": n, "dt": start_date.isoformat()})
 
     res = c.fetchall()
-    return [Expense(*x) for x in res]
+    return parse_expenses(res)
 
 
 def get_expenses_by_category(n: int, ecat: ExpenseCategory, start_date: datetime = None):
+    """
+    Collects expenses by a specific category
+    :param n: max number of records to fetch
+    :param ecat: the category of records to select
+    :param start_date: oldest date of a record
+    :return: list of expense objects
+    """
     if start_date is None:
         start_date = datetime.datetime(1, 1, 1)
 
     with conn:
         c.execute("""
-            SELECT amount, category, reason, datetime, account_id
+            SELECT expenses.*, accounts.*
             FROM expenses
+            INNER JOIN accounts ON expenses.account_id = accounts.id
             WHERE category=:ecat AND datetime > :dt
             LIMIT :n
         """, {"n": n, "ecat": ecat.name, "dt": start_date.isoformat()})
 
     res = c.fetchall()
-    return [Expense(*x) for x in res]
+    return parse_expenses(res)
+
+
+def parse_expenses(expense_account_records):
+    """
+    Takes the output of the joined expense-account table to objs
+    :param expense_account_records: List of expense-account records
+    :return: list of expense objects
+    """
+    expenses = []
+    for r in expense_account_records:
+        acc = Account(*(r[-3:]))
+        expenses.append(Expense(
+            id=r[0], reason=r[1], category=ExpenseCategory[r[2]], date=isoparse(r[3]),
+            amount=r[4], account=acc
+        ))
+
+    return expenses
 
 
 def get_timeframe(ecat: ExpenseCategory):
@@ -240,17 +221,62 @@ def add_account(name: str, balance: float):
     account_id = hash((name, balance, datetime.datetime.now()))
     with conn:
         c.execute("""
-            INSERT OR IGNORE INTO accounts (id, account_name, balance)
+            INSERT INTO accounts (id, account_name, balance)
             VALUES (:id, :name, :balance)
         """, {"id": account_id, "name": name, "balance": balance})
 
 
-def change_balance(account_id: int, add_to: float):
-    acc = get_account_by_id(account_id)
-    new_balance = acc.balance + add_to
+def change_balance(account: Account, add_to: float):
+    new_balance = account.balance + add_to
     with conn:
         c.execute("""
             UPDATE accounts
             SET balance = :balance
             WHERE id = :acc_id
-        """, {"balance": new_balance, "acc_id": account_id})
+        """, {"balance": new_balance, "acc_id": account.id})
+    return new_balance
+
+
+# Recurring Payments
+
+def setup_recurring_payment(expense: Expense, time_frame: TimeFrame):
+    """
+    Adds a new recurring payment
+    :param expense: the payment
+    :param time_frame: how often to make the payment
+    :return: void
+    """
+    expense_id = hash((expense, time_frame, datetime.datetime.now()))
+    with conn:
+        c.execute("""
+            INSERT INTO recurring_payments (id, expense_id, time_frame, last_paid)
+            VALUES (:id, :eid, :tf, :last_paid)
+        """, {"id": expense_id, "eid": expense.id, "tf": time_frame.name,
+              "last_paid": datetime.datetime.now().isoformat()})
+
+
+def get_recurring_payments():
+    """
+    Gets a list of all recurring payments
+    :return: recurring payment list
+    """
+    with conn:
+        c.execute("""
+            SELECT expenses.*, accounts.*, recurring_payments.id, recurring_payments.time_frame,
+                   recurring_payments.last_paid
+            FROM recurring_payments
+            INNER JOIN expenses on expenses.id = recurring_payments.expense_id
+            INNER JOIN accounts on accounts.id = expenses.account_id
+        """)
+    res = c.fetchall()
+    recurring_payments = []
+
+    for r in res:
+        acc = Account(id=r[6], account_name=r[7], balance=r[8])
+        exp = Expense(
+            id=r[0], reason=r[1], category=ExpenseCategory[r[2]], date=isoparse(r[3]),
+            amount=r[4], account=acc
+        )
+        recurring_payments.append(RecurringExpense(r[-3], exp, TimeFrame[r[-2]], isoparse(r[-1])))
+
+    return recurring_payments
